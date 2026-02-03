@@ -1,15 +1,11 @@
-// Multiplayer Snake.io Node.js/socket.io backend (multi-food, respawn-center, lag optimized)
-// Now spawns 7 foods per room; respawn in grid center with score 0
-
+// Multiplayer Snake.io backend (large map, respawn-center, 7 foods)
 const express = require('express');
 const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http, { cors: { origin: '*' } });
 
-const GRID_SIZE = 20;
-const FOOD_COUNT = 7; // 7 foods at once
-
-// Compute grid center
+const GRID_SIZE = 40; // <-- NOW 40x40!
+const FOOD_COUNT = 7;
 const centerCell = { x: Math.floor(GRID_SIZE/2), y: Math.floor(GRID_SIZE/2) };
 
 let rooms = {};
@@ -51,7 +47,6 @@ io.on('connection', socket => {
         foods: []
       };
     }
-    // Initialize player, start in center with score 0
     rooms[room].players[socket.id] = {
       id: socket.id,
       name: name,
@@ -60,7 +55,6 @@ io.on('connection', socket => {
       dir: 'right',
       moveTime: 0
     };
-    // Ensure foods exist
     const snakesFlat = Object.values(rooms[room].players).map(p => p.snake).flat();
     if (rooms[room].foods.length < FOOD_COUNT) {
       rooms[room].foods = initFoods(snakesFlat);
@@ -80,7 +74,6 @@ io.on('connection', socket => {
     if (!room || !rooms[room] || !rooms[room].players[socket.id]) return;
     const player = rooms[room].players[socket.id];
     if (!canMove(player)) return;
-    // Trust client to send valid snake array and score; enforce basic limits here if needed
     player.snake = Array.isArray(data.snake) ? data.snake : player.snake;
     player.score = typeof data.score === 'number' ? data.score : player.score;
     io.to(room).emit('gameState', getState(room));
@@ -89,9 +82,7 @@ io.on('connection', socket => {
   socket.on('eatFood', coords => {
     if (!room || !rooms[room]) return;
     let foods = rooms[room].foods || [];
-    // Remove the eaten food
     foods = foods.filter(f => !(f.x === coords.x && f.y === coords.y));
-    // Refill up to FOOD_COUNT
     const snakesFlat = Object.values(rooms[room].players).map(p => p.snake).flat();
     let safety = 0;
     while (foods.length < FOOD_COUNT && safety < 500) {
@@ -107,7 +98,6 @@ io.on('connection', socket => {
 
   socket.on('restart', () => {
     if (!room || !rooms[room] || !rooms[room].players[socket.id]) return;
-    // Respawn exactly at center with score 0 and reset direction
     rooms[room].players[socket.id].score = 0;
     rooms[room].players[socket.id].snake = [Object.assign({}, centerCell)];
     rooms[room].players[socket.id].dir = 'right';
