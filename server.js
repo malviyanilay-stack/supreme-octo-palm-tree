@@ -1,5 +1,5 @@
 // SNAKEY SNAKEY Multiplayer Server
-// 50x50 grid, 7 foods, top scorer disco, custom player color by nickname
+// 50x50 grid, 7 foods, disco top scorer, custom player color, perfect join/leave
 
 const express = require('express');
 const app = express();
