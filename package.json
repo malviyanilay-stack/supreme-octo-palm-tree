@@ -1,13 +1,16 @@
 {
-  "name": "snake-multiplayer-server",
+  "name": "SNAKEY SNAKEY",
   "version": "1.0.0",
-  "description": "Multiplayer Snake.io backend server",
+  "description": "SNAKEY SNAKEY ",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.17.1",
+    "express": "^4.17.3",
     "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
