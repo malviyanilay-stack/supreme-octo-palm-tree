@@ -1,5 +1,5 @@
-// SNAKEY SNAKEY - Multiplayer Snake.io backend
-// 40x40 grid, 7 foods, custom player color by nickname, top scorer gets disco-glow
+// SNAKEY SNAKEY Multiplayer Server
+// 40x40 grid, 7 foods, custom player color by nickname, top scorer disco, clean join/leave bugfix
 
 const express = require('express');
 const app = express();
@@ -8,7 +8,7 @@ const io = require('socket.io')(http, { cors: { origin: '*' } });
 
 const GRID_SIZE = 40;
 const FOOD_COUNT = 7;
-const centerCell = { x: Math.floor(GRID_SIZE/2), y: Math.floor(GRID_SIZE/2) };
+const centerCell = { x: Math.floor(GRID_SIZE / 2), y: Math.floor(GRID_SIZE / 2) };
 
 let rooms = {};
 
@@ -16,9 +16,15 @@ function randomEmptyCell(occupied = []) {
   let pos;
   let tries = 0;
   do {
-    pos = { x: Math.floor(Math.random() * GRID_SIZE), y: Math.floor(Math.random() * GRID_SIZE) };
+    pos = {
+      x: Math.floor(Math.random() * GRID_SIZE),
+      y: Math.floor(Math.random() * GRID_SIZE)
+    };
     tries++;
-  } while (occupied.some(o => o.x === pos.x && o.y === pos.y) && tries < 200);
+  } while (
+    occupied.some(o => o.x === pos.x && o.y === pos.y) &&
+    tries < 200
+  );
   return pos;
 }
 
@@ -37,12 +43,12 @@ function initFoods(snakes) {
   return foods;
 }
 
-// Helper to consistently turn a nickname into a number
+// Deterministic color per nickname
 function hashNick(nick) {
   let hash = 0;
-  for(let i=0;i<nick.length;i++) {
-    hash = ((hash<<5)-hash) + nick.charCodeAt(i);
-    hash |=0;
+  for (let i = 0; i < nick.length; i++) {
+    hash = ((hash << 5) - hash) + nick.charCodeAt(i);
+    hash |= 0;
   }
   return Math.abs(hash);
 }
@@ -50,16 +56,25 @@ function hashNick(nick) {
 io.on('connection', socket => {
   let room, name;
 
+  // On explicit join, clean up old ghost slot if present
   socket.on('joinRoom', data => {
-    room = data.room;
-    name = data.name;
+    room = data.room ? String(data.room).slice(0,40) : "default";
+    name = data.name ? String(data.name).slice(0,24) : "anon";
+
+    // Ensure room exists
     if (!rooms[room]) {
       rooms[room] = {
         players: {},
         foods: []
       };
     }
-    // Avoid duplicate join
+    // Safety: Remove previous ghost slots (stale/old sockets)
+    for (let pid in rooms[room].players) {
+      if (rooms[room].players[pid].id === socket.id) {
+        delete rooms[room].players[pid];
+      }
+    }
+    // New player entry
     rooms[room].players[socket.id] = {
       id: socket.id,
       name: name,
@@ -70,6 +85,7 @@ io.on('connection', socket => {
       moveTime: 0,
       joined: Date.now()
     };
+    // Foods if missing
     const snakesFlat = Object.values(rooms[room].players).map(p => p.snake).flat();
     if (rooms[room].foods.length < FOOD_COUNT) {
       rooms[room].foods = initFoods(snakesFlat);
@@ -121,6 +137,7 @@ io.on('connection', socket => {
 
   socket.on('disconnect', () => {
     if (!room || !rooms[room]) return;
+    // Remove player slot if present
     delete rooms[room].players[socket.id];
     if (Object.keys(rooms[room].players).length === 0) {
       delete rooms[room];
@@ -130,13 +147,13 @@ io.on('connection', socket => {
   });
 });
 
+// Picks the top scorer (score first, then earliest join time)
 function getState(room) {
   if (!rooms[room]) return {};
-  // Find the top-scorer (first by score, then by join time)
   let bestPlayerId = null;
   let maxScore = -1;
-  let earliest = Date.now()+100000;
-  for(let pid in rooms[room].players) {
+  let earliest = Date.now() + 100000;
+  for (let pid in rooms[room].players) {
     let p = rooms[room].players[pid];
     if (
       p.score > maxScore ||
@@ -147,11 +164,10 @@ function getState(room) {
       earliest = p.joined;
     }
   }
-  // Mark which player is disco (can be none if no players)
   let playerStates = {};
-  for(let pid in rooms[room].players) {
+  for (let pid in rooms[room].players) {
     let p = rooms[room].players[pid];
-    playerStates[pid] = { ...p, disco: (pid === bestPlayerId)};
+    playerStates[pid] = { ...p, disco: (pid === bestPlayerId) };
   }
   return {
     players: playerStates,
