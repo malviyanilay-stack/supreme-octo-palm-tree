@@ -1,12 +1,12 @@
 // SNAKEY SNAKEY Multiplayer Server
-// 40x40 grid, 7 foods, custom player color by nickname, top scorer disco, clean join/leave bugfix
+// 50x50 grid, 7 foods, top scorer disco, custom player color by nickname
 
 const express = require('express');
 const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http, { cors: { origin: '*' } });
 
-const GRID_SIZE = 40;
+const GRID_SIZE = 50;
 const FOOD_COUNT = 7;
 const centerCell = { x: Math.floor(GRID_SIZE / 2), y: Math.floor(GRID_SIZE / 2) };
 
@@ -22,8 +22,7 @@ function randomEmptyCell(occupied = []) {
     };
     tries++;
   } while (
-    occupied.some(o => o.x === pos.x && o.y === pos.y) &&
-    tries < 200
+    occupied.some(o => o.x === pos.x && o.y === pos.y) && tries < 300
   );
   return pos;
 }
@@ -33,7 +32,7 @@ function initFoods(snakes) {
   snakes.forEach(s => occupied = occupied.concat(s));
   let foods = [];
   let safety = 0;
-  while (foods.length < FOOD_COUNT && safety < 500) {
+  while (foods.length < FOOD_COUNT && safety < 1000) {
     const pos = randomEmptyCell(foods.concat(occupied));
     if (!foods.some(f => f.x === pos.x && f.y === pos.y)) {
       foods.push(pos);
@@ -43,7 +42,6 @@ function initFoods(snakes) {
   return foods;
 }
 
-// Deterministic color per nickname
 function hashNick(nick) {
   let hash = 0;
   for (let i = 0; i < nick.length; i++) {
@@ -56,36 +54,27 @@ function hashNick(nick) {
 io.on('connection', socket => {
   let room, name;
 
-  // On explicit join, clean up old ghost slot if present
   socket.on('joinRoom', data => {
-    room = data.room ? String(data.room).slice(0,40) : "default";
-    name = data.name ? String(data.name).slice(0,24) : "anon";
-
-    // Ensure room exists
+    room = data.room ? String(data.room).slice(0, 40) : "default";
+    name = data.name ? String(data.name).slice(0, 24) : "anon";
     if (!rooms[room]) {
       rooms[room] = {
         players: {},
         foods: []
       };
     }
-    // Safety: Remove previous ghost slots (stale/old sockets)
-    for (let pid in rooms[room].players) {
-      if (rooms[room].players[pid].id === socket.id) {
-        delete rooms[room].players[pid];
-      }
-    }
-    // New player entry
+    // Remove ghost slot if present
+    delete rooms[room].players[socket.id];
     rooms[room].players[socket.id] = {
       id: socket.id,
       name: name,
       colorSeed: hashNick(name),
-      snake: [Object.assign({}, centerCell)],
+      snake: [{ x: centerCell.x, y: centerCell.y }],
       score: 0,
       dir: 'right',
       moveTime: 0,
       joined: Date.now()
     };
-    // Foods if missing
     const snakesFlat = Object.values(rooms[room].players).map(p => p.snake).flat();
     if (rooms[room].foods.length < FOOD_COUNT) {
       rooms[room].foods = initFoods(snakesFlat);
@@ -116,7 +105,7 @@ io.on('connection', socket => {
     foods = foods.filter(f => !(f.x === coords.x && f.y === coords.y));
     const snakesFlat = Object.values(rooms[room].players).map(p => p.snake).flat();
     let safety = 0;
-    while (foods.length < FOOD_COUNT && safety < 500) {
+    while (foods.length < FOOD_COUNT && safety < 1000) {
       const newPos = randomEmptyCell(foods.concat(snakesFlat));
       if (!foods.some(f => f.x === newPos.x && f.y === newPos.y)) {
         foods.push(newPos);
@@ -130,14 +119,13 @@ io.on('connection', socket => {
   socket.on('restart', () => {
     if (!room || !rooms[room] || !rooms[room].players[socket.id]) return;
     rooms[room].players[socket.id].score = 0;
-    rooms[room].players[socket.id].snake = [Object.assign({}, centerCell)];
+    rooms[room].players[socket.id].snake = [{ x: centerCell.x, y: centerCell.y }];
     rooms[room].players[socket.id].dir = 'right';
     io.to(room).emit('gameState', getState(room));
   });
 
   socket.on('disconnect', () => {
     if (!room || !rooms[room]) return;
-    // Remove player slot if present
     delete rooms[room].players[socket.id];
     if (Object.keys(rooms[room].players).length === 0) {
       delete rooms[room];
@@ -147,18 +135,12 @@ io.on('connection', socket => {
   });
 });
 
-// Picks the top scorer (score first, then earliest join time)
 function getState(room) {
   if (!rooms[room]) return {};
-  let bestPlayerId = null;
-  let maxScore = -1;
-  let earliest = Date.now() + 100000;
+  let bestPlayerId = null, maxScore = -1, earliest = Date.now() + 100000;
   for (let pid in rooms[room].players) {
     let p = rooms[room].players[pid];
-    if (
-      p.score > maxScore ||
-      (p.score === maxScore && p.joined < earliest)
-    ) {
+    if (p.score > maxScore || (p.score === maxScore && p.joined < earliest)) {
       bestPlayerId = p.id;
       maxScore = p.score;
       earliest = p.joined;
